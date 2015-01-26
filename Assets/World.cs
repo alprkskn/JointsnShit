@@ -16,9 +16,9 @@ public class World : MonoBehaviour
     {
 	    Polygons = new List<Polygon>();
         GameObject root = GameObject.Find("Polygons");
-	    foreach (var poly in root.GetComponentsInChildren<Transform>().Skip(1).Where(x => x.transform.parent == root.transform))
+        foreach (var poly in root.GetComponentsInChildren<Transform>().Skip(1).Where(x => x.transform.parent == root.transform))
 	    {
-            var verts = poly.GetComponentsInChildren<Transform>().Skip(1).Select(v => v.transform.position.ToVector2XY()).ToList();
+            var verts = poly.GetComponentsInChildren<Transform>().Where(x => x.name == "Cube").Select(v => v.transform.position.ToVector2XY()).ToList();
 	        Polygons.Add(new Polygon(verts));
 
             var col = poly.gameObject.AddComponent<MeshCollider>() as MeshCollider;
@@ -56,7 +56,7 @@ public class World : MonoBehaviour
 
         foreach (var poly in GameObject.Find("Polygons").GetComponentsInChildren<Transform>().Skip(1))
         {
-            var verts = poly.GetComponentsInChildren<Transform>().Skip(1).Select(v => v.transform.position.ToVector2XY()).ToList();
+            var verts = poly.GetComponentsInChildren<Transform>().Where(x => x.name == "Cube").Select(v => v.transform.position.ToVector2XY()).ToList();
             polygons.Add(new Polygon(verts));
         }
 
