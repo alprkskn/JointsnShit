@@ -9,8 +9,9 @@ using System.Collections;
 using Debug = UnityEngine.Debug;
 
 
-public class World : MonoBehaviour 
+public class World : MonoBehaviour
 {
+    public bool DrawPolygons;
     public List<Polygon> Polygons { get; set; }
 	void Start () 
     {
@@ -52,17 +53,23 @@ public class World : MonoBehaviour
 
     public void OnDrawGizmos()
     {
-        var polygons = new List<Polygon>();
-
-        foreach (var poly in GameObject.Find("Polygons").GetComponentsInChildren<Transform>().Skip(1))
+        if (DrawPolygons)
         {
-            var verts = poly.GetComponentsInChildren<Transform>().Where(x => x.name == "Cube").Select(v => v.transform.position.ToVector2XY()).ToList();
-            polygons.Add(new Polygon(verts));
-        }
+            var polygons = new List<Polygon>();
+            foreach (var poly in GameObject.Find("Polygons").GetComponentsInChildren<Transform>().Skip(1))
+            {
+                var verts =
+                    poly.GetComponentsInChildren<Transform>()
+                        .Where(x => x.name == "Cube")
+                        .Select(v => v.transform.position.ToVector2XY())
+                        .ToList();
+                polygons.Add(new Polygon(verts));
+            }
 
-        foreach (var polygon in polygons)
-        {
-            polygon.Draw();
+            foreach (var polygon in polygons)
+            {
+                polygon.Draw();
+            }
         }
     }
 }

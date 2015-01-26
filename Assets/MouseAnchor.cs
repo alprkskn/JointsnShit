@@ -30,8 +30,9 @@ public class Anchor
 
 public class MouseAnchor : MonoBehaviour
 {
-
-    HingeJoint hj;
+    public Pendulum _pendulum;
+    public GameObject _pivot;
+    //ConfigurableJoint hj;
     Plane plane;
     List<Anchor> anchors;
     World world;
@@ -40,9 +41,11 @@ public class MouseAnchor : MonoBehaviour
 	// Use this for initialization
 	void Start ()
     {
+        _pendulum = this.gameObject.GetComponent<Pendulum>();
+	    _pivot = GameObject.Find("Anchor");
         world = GameObject.Find("World").GetComponent<World>();
         anchors = new List<Anchor>();
-        hj = this.GetComponent<HingeJoint>();
+        //hj = this.GetComponent<ConfigurableJoint>();
         plane = new Plane(Vector3.forward, Vector3.zero);
         CreateNewAnchor(Vector3.zero);
 	}
@@ -64,9 +67,9 @@ public class MouseAnchor : MonoBehaviour
     private void CreateNewAnchor(Vector3 pos)
     {
         PushAnchor(pos);
-        hj.connectedAnchor = pos;
-        hj.anchor = pos - this.transform.position;
-        this.length = hj.anchor.magnitude;
+        _pivot.transform.position = pos;
+        _pendulum.Pivot = _pivot;
+        _pendulum.ResetRopeLength();
     }
 
     private void PopAnchor()
@@ -74,12 +77,11 @@ public class MouseAnchor : MonoBehaviour
         var a = this.anchors.Last();
         a.Destroy();
         this.anchors.RemoveAt(this.anchors.Count - 1);
-        hj.connectedAnchor = this.anchors.Last().position;
-        hj.anchor = hj.connectedAnchor - this.transform.position;
-        this.length = hj.anchor.magnitude;
+        _pivot.transform.position = this.anchors.Last().position;
+        _pendulum.Pivot = _pivot;
+        _pendulum.ResetRopeLength();
     }
 
-	// Update is called once per frame
 	void Update ()
     {
         //if(Input.GetMouseButtonDown(0))
@@ -96,10 +98,10 @@ public class MouseAnchor : MonoBehaviour
 
         foreach (var v in world.Polygons.SelectMany(x => x.Vertices))
         {
-            if (v == hj.connectedAnchor.ToVector2XY())
+            if (v == _pendulum.Pivot.transform.position.ToVector2XY())
                 continue;
             //hj.connectedAnchor
-            if (v.FindDistanceToSegment(this.transform.position.ToVector2XY(), hj.connectedAnchor.ToVector2XY()) < threshold)
+            if (v.FindDistanceToSegment(this.transform.position.ToVector2XY(), _pendulum.Pivot.transform.position.ToVector2XY()) < threshold)
             {
                 //Debug.DrawLine(transform.position, hj.connectedAnchor, Color.red, 1f);
                 //Debug.DrawLine(transform.position, v.ToVector3XY(), Color.green, 1f);
@@ -123,38 +125,38 @@ public class MouseAnchor : MonoBehaviour
             }
         }
 
-        //foreach(var l in world.Polygons.SelectMany(x => x.Edges))
-        //{
-        //    Vector2 c;
-        //    if (transform.position.ToVector2XY().FindDistanceToSegment(l.Start, l.End, out c) < threshold)
-        //    {
-                
-        //        var vel = hj.gameObject.GetComponent<Rigidbody>().velocity * -0.3f;
-        //        if (vel.magnitude > 10)
-        //            vel = vel.normalized * 10;
-        //        else if (vel.magnitude < 1f)
-        //        {
-        //            vel = Vector3.zero;
-        //        }
-        //        else
-        //        {
-        //            hj.gameObject.GetComponent<Rigidbody>().velocity = vel;
-        //            this.transform.position = c.ToVector3XY() + vel.normalized;
-        //        }
-        //    }
-        //}
+        foreach (var l in world.Polygons.SelectMany(x => x.Edges))
+        {
+            Vector2 c;
+            if (transform.position.ToVector2XY().FindDistanceToSegment(l.Start, l.End, out c) < threshold)
+            {
+
+                var vel = _pendulum.currentVelocity * -0.3f;
+                if (vel.magnitude > 10)
+                    vel = vel.normalized * 10;
+                else if (vel.magnitude < 1f)
+                {
+                    vel = Vector3.zero;
+                }
+                else
+                {
+                    _pendulum.currentVelocity = vel;
+                    this.transform.position = c.ToVector3XY() + vel.normalized;
+                }
+            }
+        }
 	}
 
     void OnDrawGizmos()
     {
         if(Application.isPlaying)
         {
-            Gizmos.DrawWireSphere(hj.connectedAnchor, .3f);
+            Gizmos.DrawWireSphere(_pendulum.Pivot.transform.position, .3f);
             for(int i = 0; i < anchors.Count - 1; i++)
             {
                 Debug.DrawLine(this.anchors[i].position, this.anchors[i + 1].position);
             }
-            Gizmos.DrawLine(hj.connectedAnchor, this.transform.position);
+            Gizmos.DrawLine(_pendulum.Pivot.transform.position, this.transform.position);
         }
     }
 }
