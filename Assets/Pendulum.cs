@@ -1,5 +1,7 @@
-﻿using UnityEngine;
-using System.Collections;
+﻿using System.Collections.Generic;
+using System.Linq;
+using Assets.Helpers;
+using UnityEngine;
 
 // Author: Eric Eastwood (ericeastwood.com)
 //
@@ -11,200 +13,315 @@ using System.Collections;
 // Demonstration: https://i.imgur.com/vOQgFMe.gif
 //
 // Usage: https://i.imgur.com/BM52dbT.png
-public class Pendulum : MonoBehaviour
+namespace Assets
 {
-    public GameObject Pivot;
-    public GameObject Bob;
-    public float mass = 1f;
-    float ropeLength = 2f;
-    float pullForce = 80f;
-    float releaseSpeed = 0.3f;
-    Vector3 bobStartingPosition;
-    bool bobStartingPositionSet = false;
-    // You could define these in the `PendulumUpdate()` loop
-    // But we want them in the class scope so we can draw gizmos `OnDrawGizmos()`
-    private Vector3 gravityDirection;
-    private Vector3 tensionDirection;
-    private Vector3 tangentDirection;
-    private Vector3 pendulumSideDirection;
-    private float tensionForce = 0f;
-    private float gravityForce = 0f;
-    // Keep track of the current velocity
-    public Vector3 currentVelocity = new Vector3();
-    // We use these to smooth between values in certain framerate situations in the `Update()` loop
-    Vector3 currentStatePosition;
-    Vector3 previousStatePosition;
-    // Use this for initialization
-    void Start()
+    public class Pendulum : MonoBehaviour
     {
-        // Set the starting position for later use in the context menu reset methods
-        this.bobStartingPosition = this.Bob.transform.position;
-        this.bobStartingPositionSet = true;
-        this.PendulumInit();
-    }
-    float t = 0f;
-    float dt = 0.01f;
-    float currentTime = 0f;
-    float accumulator = 0f;
-    void Update()
-    {
-        /* */
-        // Fixed deltaTime rendering at any speed with smoothing
-        // Technique: http://gafferongames.com/game-physics/fix-your-timestep/
-        float frameTime = Time.time - currentTime;
-        this.currentTime = Time.time;
-        this.accumulator += frameTime;
+        public GameObject Pivot;
+        public GameObject Bob;
 
-        if (Input.GetKey(KeyCode.LeftControl))
-        {
-            this.ropeLength += this.releaseSpeed;
-        }
+        private GameObject _fakePivot;
+        private World _world;
+        private List<Anchor> Anchors { get; set; }
+        private Plane _plane;
 
-        while (this.accumulator >= this.dt)
+        private float Mass = 1f;
+        private const float PullForce = 80f;
+        private const float ReleaseSpeed = 0.3f;
+
+        private float _time = 0f;
+        private const float Dt = 0.01f;
+        private float _currentTime = 0f;
+        private float _accumulator = 0f;
+
+        private float _distanceCheckThreshold = 0.2f;
+        private float _ropeLength = 2f;
+        private bool _bobStartingPositionSet = false;
+        private float _tensionForce = 0f;
+        private float _gravityForce = 0f;
+        private Vector3 _bobStartingPosition;
+        private Vector3 _gravityDirection;
+        private Vector3 _tensionDirection;
+        private Vector3 _tangentDirection;
+        private Vector3 _pendulumSideDirection;
+        private Vector3 _currentStatePosition;
+        private Vector3 _previousStatePosition;
+
+        public Vector3 CurrentVelocity { get; set; }
+        void Start()
         {
-            this.previousStatePosition = this.currentStatePosition;
-            this.currentStatePosition = (Pivot != null)
-                ? this.PendulumUpdate(this.currentStatePosition, this.dt, Input.GetKey(KeyCode.Space))
-                : this.FreefallUpdate(this.currentStatePosition, this.dt);
-            //integrate(state, this.t, this.dt);
-            accumulator -= this.dt;
-            this.t += this.dt;
-        }
-        float alpha = this.accumulator / this.dt;
-        Vector3 newPosition = this.currentStatePosition * alpha + this.previousStatePosition * (1f - alpha);
-        this.Bob.transform.position = newPosition; //this.currentStatePosition;
-        /* */
-        //this.Bob.transform.position = this.PendulumUpdate(this.Bob.transform.position, Time.deltaTime);
-    }
-    // Use this to reset forces and go back to the starting position
-    [ContextMenu("Reset Pendulum Position")]
-    void ResetPendulumPosition()
-    {
-        if (this.bobStartingPositionSet)
-            this.MoveBob(this.bobStartingPosition);
-        else
+            Anchors = new List<Anchor>();
+            _fakePivot = new GameObject();
+            _world = GameObject.Find("World").GetComponent<World>();
+            _plane = new Plane(Vector3.forward, Vector3.zero);
+            _bobStartingPosition = this.Bob.transform.position;
+            _bobStartingPositionSet = true;
+            CreateNewAnchor(Vector3.zero);
             this.PendulumInit();
-    }
-    // Use this to reset any built up forces
-    [ContextMenu("Reset Pendulum Forces")]
-    void ResetPendulumForces()
-    {
-        this.currentVelocity = Vector3.zero;
-        // Set the transition state
-        this.currentStatePosition = this.Bob.transform.position;
-    }
+        }
+    
+        void Update()
+        {
+            foreach (var v in _world.Polygons.SelectMany(x => x.Vertices))
+            {
+                if (Pivot != null && v == Pivot.transform.position.ToVector2XY())
+                    continue;
+                if (Pivot != null && v.FindDistanceToSegment(transform.position.ToVector2XY(), Pivot.transform.position.ToVector2XY()) < _distanceCheckThreshold)
+                {
+                    CreateNewAnchor(v);
+                    break;
+                }
+            }
 
-    public void ResetRopeLength()
-    {
-        this.ropeLength = Vector3.Distance(Pivot.transform.position, Bob.transform.position);
-    }
-    void PendulumInit()
-    {
-        // Get the initial rope length from how far away the bob is now
-        this.ResetRopeLength();
-        this.ResetPendulumForces();
-    }
-    void MoveBob(Vector3 resetBobPosition)
-    {
-        // Put the bob back in the place we first saw it at in `Start()`
-        this.Bob.transform.position = resetBobPosition;
-        // Set the transition state
-        this.currentStatePosition = resetBobPosition;
-    }
-    Vector3 FreefallUpdate(Vector3 currentStatePosition, float deltaTime)
-    {
-        this.gravityForce = this.mass * Physics.gravity.magnitude;
-        this.gravityDirection = Physics.gravity.normalized;
-        this.currentVelocity += this.gravityDirection * this.gravityForce * deltaTime;
+            // check and delete unnecessary anchors, this can/should be improved using angle checks
+            if (Anchors.Count > 1)
+            {
+                var prevAnchor = Anchors[Anchors.Count - 2];
+                RaycastHit hitInfo;
+                if (Physics.Raycast(this.transform.position, prevAnchor.position - this.transform.position, out hitInfo))
+                {
+                    if (hitInfo.collider == prevAnchor.go.collider)
+                    {
+                        PopAnchor();
+                    }
+                }
+            } 
 
-        return currentStatePosition + this.currentVelocity * deltaTime;
-    }
+            //ball&wall collision, should be rewritten properly
+            foreach (var l in _world.Polygons.SelectMany(x => x.Edges))
+            {
+                Vector2 c;
+                var pos = transform.position.ToVector2XY();
+                if (pos.FindDistanceToSegment(l.Start, l.End, out c) < 1 &&
+                    MyExtensions.FasterLineSegmentIntersection(pos, pos + CurrentVelocity.ToVector2XY() * 5, l.Start, l.End))
+                {
+                    var vel = CurrentVelocity * -0.3f;
+                    if (vel.magnitude > 10)
+                        vel = vel.normalized * 10;
+                    else if (vel.magnitude < 1f)
+                    {
+                        vel = Vector3.zero;
+                    }
+                    CurrentVelocity = vel;
+                }
+            }
 
-    Vector3 PendulumUpdate(Vector3 currentStatePosition, float deltaTime, bool pull)
-    {
-        // Add gravity free fall
-        this.gravityForce = this.mass * Physics.gravity.magnitude;
-        this.gravityDirection = Physics.gravity.normalized;
-        this.currentVelocity += this.gravityDirection * this.gravityForce * deltaTime ;
-        Vector3 pivot_p = this.Pivot.transform.position;
-        Vector3 bob_p = this.currentStatePosition;
-        Vector3 auxiliaryMovementDelta = this.currentVelocity * deltaTime;
-        float distanceAfterGravity = Vector3.Distance(pivot_p, bob_p + auxiliaryMovementDelta);
-        // If at the end of the rope
-        if (distanceAfterGravity > this.ropeLength || Mathf.Approximately(distanceAfterGravity, this.ropeLength))
-        {
-            this.tensionDirection = (pivot_p - bob_p).normalized;
-            this.pendulumSideDirection = (Quaternion.Euler(0f, 90f, 0f) * this.tensionDirection);
-            this.pendulumSideDirection.Scale(new Vector3(1f, 0f, 1f));
-            this.pendulumSideDirection.Normalize();
-            this.tangentDirection = (-1f * Vector3.Cross(this.tensionDirection, this.pendulumSideDirection)).normalized;
-            float inclinationAngle = Vector3.Angle(bob_p - pivot_p, this.gravityDirection);
-            this.tensionForce = this.mass * Physics.gravity.magnitude * Mathf.Cos(Mathf.Deg2Rad * inclinationAngle);
-            float centripetalForce = ((this.mass * Mathf.Pow(this.currentVelocity.magnitude, 2)) / this.ropeLength);
-            this.tensionForce += centripetalForce;
-            this.currentVelocity += this.tensionDirection * this.tensionForce * deltaTime;
+            HandleInput();
+
+            //physics, beware
+            float frameTime = Time.time - _currentTime;
+            _currentTime = Time.time;
+            _accumulator += frameTime;
+            while (_accumulator >= Dt)
+            {
+                _previousStatePosition = _currentStatePosition;
+                _currentStatePosition = (Pivot != null)
+                    ? PendulumUpdate(_currentStatePosition, Dt, Input.GetKey(KeyCode.Space))
+                    : FreefallUpdate(_currentStatePosition, Dt);
+                _accumulator -= Dt;
+                _time += Dt;
+            }
+            float alpha = _accumulator / Dt;
+            Vector3 newPosition = _currentStatePosition * alpha + _previousStatePosition * (1f - alpha);
+            Bob.transform.position = newPosition;
         }
-        if (pull)
+
+        private void HandleInput()
         {
-            this.currentVelocity += this.tensionDirection * this.pullForce * deltaTime;
+            if (Input.GetKey(KeyCode.LeftControl))
+            {
+                _ropeLength += ReleaseSpeed;
+            }
+
+            if (Input.GetMouseButtonDown(1))
+            {
+                Anchors.Clear();
+                Pivot = null;
+            }
+            else if (Input.GetMouseButtonDown(0))
+            {
+                Anchors.Clear();
+                Pivot = null;
+                float dist;
+                Vector3 mosPos = Vector3.zero;
+                Ray ray = Camera.mainCamera.ScreenPointToRay(Input.mousePosition);
+                if (_plane.Raycast(ray, out dist))
+                {
+                    mosPos = ray.GetPoint(dist);
+                }
+
+                RaycastHit hitInfo;
+                if (Physics.Raycast(this.transform.position, mosPos - this.transform.position, out hitInfo))
+                {
+                    CreateNewAnchor(hitInfo.point);
+                    Pivot.transform.position = hitInfo.point;
+                    ResetRopeLength();
+                }
+            }
         }
-        // Get the movement delta
-        Vector3 movementDelta = Vector3.zero;
-        movementDelta += this.currentVelocity * deltaTime;
-        //return currentStatePosition + movementDelta;
-        float distance = Vector3.Distance(pivot_p, currentStatePosition + movementDelta);
-        if (!pull)
+
+        private void PushAnchor(Vector3 pos)
         {
-            return this.GetPointOnLine(pivot_p, currentStatePosition + movementDelta, distance <= this.ropeLength ? distance : this.ropeLength);
+            if (Anchors.Count > 0)
+            {
+                var a = Anchors.Last();
+                Anchors.Add(new Anchor(pos, pos - a.position));
+            }
+            else
+            {
+                Anchors.Add(new Anchor(pos, Vector3.zero));
+            }
         }
-        else
+
+        private void CreateNewAnchor(Vector3 pos)
         {
-            return this.currentStatePosition + movementDelta;
+            PushAnchor(pos);
+            _fakePivot.transform.position = pos;
+            Pivot = _fakePivot;
+            ResetRopeLength();
         }
-    }
-    Vector3 GetPointOnLine(Vector3 start, Vector3 end, float distanceFromStart)
-    {
-        return start + (distanceFromStart * Vector3.Normalize(end - start));
-    }
-    void OnDrawGizmos()
-    {
-        if (this.Pivot == null)
-            return;
-        // purple
-        Gizmos.color = new Color(.5f, 0f, .5f);
-        Gizmos.DrawWireSphere(this.Pivot.transform.position, this.ropeLength);
-        Gizmos.DrawWireCube(this.bobStartingPosition, new Vector3(.5f, .5f, .5f));
-        // Blue: Auxilary
-        Gizmos.color = new Color(.3f, .3f, 1f); // blue
-        Vector3 auxVel = .3f * this.currentVelocity;
-        Gizmos.DrawRay(this.Bob.transform.position, auxVel);
-        Gizmos.DrawSphere(this.Bob.transform.position + auxVel, .2f);
-        // Yellow: Gravity
-        Gizmos.color = new Color(1f, 1f, .2f);
-        Vector3 gravity = .3f * this.gravityForce * this.gravityDirection;
-        Gizmos.DrawRay(this.Bob.transform.position, gravity);
-        Gizmos.DrawSphere(this.Bob.transform.position + gravity, .2f);
-        // Orange: Tension
-        Gizmos.color = new Color(1f, .5f, .2f); // Orange
-        Vector3 tension = .3f * this.tensionForce * this.tensionDirection;
-        Gizmos.DrawRay(this.Bob.transform.position, tension);
-        Gizmos.DrawSphere(this.Bob.transform.position + tension, .2f);
-        // Red: Resultant
-        Gizmos.color = new Color(1f, .3f, .3f); // red
-        Vector3 resultant = gravity + tension;
-        Gizmos.DrawRay(this.Bob.transform.position, resultant);
-        Gizmos.DrawSphere(this.Bob.transform.position + resultant, .2f);
-        /* * /
-        // Green: Pendulum side direction
-        Gizmos.color = new Color(.3f, 1f, .3f);
-        Gizmos.DrawRay(this.Bob.transform.position, 3f*this.pendulumSideDirection);
-        Gizmos.DrawSphere(this.Bob.transform.position + 3f*this.pendulumSideDirection, .2f);
-        /* */
-        /* * /
-        // Cyan: tangent direction
-        Gizmos.color = new Color(.2f, 1f, 1f); // cyan
-        Gizmos.DrawRay(this.Bob.transform.position, 3f*this.tangentDirection);
-        Gizmos.DrawSphere(this.Bob.transform.position + 3f*this.tangentDirection, .2f);
-        /* */
+
+        private void PopAnchor()
+        {
+            var a = Anchors.Last();
+            a.Destroy();
+            Anchors.RemoveAt(Anchors.Count - 1);
+            _fakePivot.transform.position = Anchors.Last().position;
+            Pivot = _fakePivot;
+            ResetRopeLength();
+        }
+
+        private void ResetPendulumForces()
+        {
+            this.CurrentVelocity = Vector3.zero;
+            _currentStatePosition = this.Bob.transform.position;
+        }
+
+        public void ResetRopeLength()
+        {
+            _ropeLength = Vector3.Distance(Pivot.transform.position, Bob.transform.position);
+        }
+
+        private void PendulumInit()
+        {
+            this.ResetRopeLength();
+            this.ResetPendulumForces();
+        }
+
+        private void MoveBob(Vector3 resetBobPosition)
+        {
+            this.Bob.transform.position = resetBobPosition;
+            _currentStatePosition = resetBobPosition;
+        }
+
+        private Vector3 FreefallUpdate(Vector3 currentStatePosition, float deltaTime)
+        {
+            _gravityForce = Mass * Physics.gravity.magnitude;
+            _gravityDirection = Physics.gravity.normalized;
+            CurrentVelocity += _gravityDirection * _gravityForce * deltaTime;
+
+            return currentStatePosition + this.CurrentVelocity * deltaTime;
+        }
+
+        private Vector3 PendulumUpdate(Vector3 currentStatePosition, float deltaTime, bool pull)
+        {
+            _gravityForce = Mass * Physics.gravity.magnitude;
+            _gravityDirection = Physics.gravity.normalized;
+            CurrentVelocity += _gravityDirection * _gravityForce * deltaTime ;
+            var pivotP = Pivot.transform.position;
+            var bobP = _currentStatePosition;
+            var auxiliaryMovementDelta = CurrentVelocity * deltaTime;
+            float distanceAfterGravity = Vector3.Distance(pivotP, bobP + auxiliaryMovementDelta);
+        
+            if (distanceAfterGravity > _ropeLength || Mathf.Approximately(distanceAfterGravity, _ropeLength))
+            {
+                _tensionDirection = (pivotP - bobP).normalized;
+                _pendulumSideDirection = (Quaternion.Euler(0f, 90f, 0f) * _tensionDirection);
+                _pendulumSideDirection.Scale(new Vector3(1f, 0f, 1f));
+                _pendulumSideDirection.Normalize();
+                _tangentDirection = (-1f * Vector3.Cross(_tensionDirection, _pendulumSideDirection)).normalized;
+                var inclinationAngle = Vector3.Angle(bobP - pivotP, _gravityDirection);
+                _tensionForce = Mass * Physics.gravity.magnitude * Mathf.Cos(Mathf.Deg2Rad * inclinationAngle);
+                var centripetalForce = ((Mass * Mathf.Pow(CurrentVelocity.magnitude, 2)) / _ropeLength);
+                _tensionForce += centripetalForce;
+                CurrentVelocity += _tensionDirection * _tensionForce * deltaTime;
+            }
+            if (pull)
+            {
+                CurrentVelocity += _tensionDirection * PullForce * deltaTime;
+            }
+        
+            var movementDelta = Vector3.zero;
+            movementDelta += CurrentVelocity * deltaTime;
+            float distance = Vector3.Distance(pivotP, currentStatePosition + movementDelta);
+            if (!pull)
+            {
+                return GetPointOnLine(pivotP, currentStatePosition + movementDelta, distance <= _ropeLength ? distance : _ropeLength);
+            }
+            else
+            {
+                return _currentStatePosition + movementDelta;
+            }
+        }
+
+        Vector3 GetPointOnLine(Vector3 start, Vector3 end, float distanceFromStart)
+        {
+            return start + (distanceFromStart * Vector3.Normalize(end - start));
+        }
+
+        void OnDrawGizmos()
+        {
+            if (Application.isPlaying && Pivot != null)
+            {
+                Gizmos.DrawWireSphere(Pivot.transform.position, .3f);
+                for (int i = 0; i < Anchors.Count - 1; i++)
+                {
+                    Debug.DrawLine(Anchors[i].position, Anchors[i + 1].position);
+                }
+                Gizmos.DrawLine(Pivot.transform.position, this.transform.position);
+            }
+        }
+
+        //void OnDrawGizmos()
+        //{
+        //    if (this.Pivot == null)
+        //        return;
+
+        //    Gizmos.color = new Color(.5f, 0f, .5f);
+        //    Gizmos.DrawWireSphere(this.Pivot.transform.position, _ropeLength);
+        //    Gizmos.DrawWireCube(_bobStartingPosition, new Vector3(.5f, .5f, .5f));
+        //    // Blue: Auxilary
+        //    Gizmos.color = new Color(.3f, .3f, 1f); // blue
+        //    Vector3 auxVel = .3f * this.CurrentVelocity;
+        //    Gizmos.DrawRay(this.Bob.transform.position, auxVel);
+        //    Gizmos.DrawSphere(this.Bob.transform.position + auxVel, .2f);
+        //    // Yellow: Gravity
+        //    Gizmos.color = new Color(1f, 1f, .2f);
+        //    Vector3 gravity = .3f * _gravityForce * _gravityDirection;
+        //    Gizmos.DrawRay(this.Bob.transform.position, gravity);
+        //    Gizmos.DrawSphere(this.Bob.transform.position + gravity, .2f);
+        //    // Orange: Tension
+        //    Gizmos.color = new Color(1f, .5f, .2f); // Orange
+        //    Vector3 tension = .3f * _tensionForce * _tensionDirection;
+        //    Gizmos.DrawRay(this.Bob.transform.position, tension);
+        //    Gizmos.DrawSphere(this.Bob.transform.position + tension, .2f);
+        //    // Red: Resultant
+        //    Gizmos.color = new Color(1f, .3f, .3f); // red
+        //    Vector3 resultant = gravity + tension;
+        //    Gizmos.DrawRay(this.Bob.transform.position, resultant);
+        //    Gizmos.DrawSphere(this.Bob.transform.position + resultant, .2f);
+        //    /* * /
+        //    // Green: Pendulum side direction
+        //    Gizmos.color = new Color(.3f, 1f, .3f);
+        //    Gizmos.DrawRay(this.Bob.transform.position, 3f*_pendulumSideDirection);
+        //    Gizmos.DrawSphere(this.Bob.transform.position + 3f*_pendulumSideDirection, .2f);
+        //    /* */
+        //    /* * /
+        //    // Cyan: tangent direction
+        //    Gizmos.color = new Color(.2f, 1f, 1f); // cyan
+        //    Gizmos.DrawRay(this.Bob.transform.position, 3f*_tangentDirection);
+        //    Gizmos.DrawSphere(this.Bob.transform.position + 3f*_tangentDirection, .2f);
+        //    /* */
+        //}
     }
 }
