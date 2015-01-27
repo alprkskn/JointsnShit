@@ -17,6 +17,8 @@ public class Pendulum : MonoBehaviour
     public GameObject Bob;
     public float mass = 1f;
     float ropeLength = 2f;
+    float pullForce = 80f;
+    float releaseSpeed = 0.3f;
     Vector3 bobStartingPosition;
     bool bobStartingPositionSet = false;
     // You could define these in the `PendulumUpdate()` loop
@@ -52,11 +54,17 @@ public class Pendulum : MonoBehaviour
         float frameTime = Time.time - currentTime;
         this.currentTime = Time.time;
         this.accumulator += frameTime;
+
+        if (Input.GetKey(KeyCode.LeftControl))
+        {
+            this.ropeLength += this.releaseSpeed;
+        }
+
         while (this.accumulator >= this.dt)
         {
             this.previousStatePosition = this.currentStatePosition;
             this.currentStatePosition = (Pivot != null)
-                ? this.PendulumUpdate(this.currentStatePosition, this.dt)
+                ? this.PendulumUpdate(this.currentStatePosition, this.dt, Input.GetKey(KeyCode.Space))
                 : this.FreefallUpdate(this.currentStatePosition, this.dt);
             //integrate(state, this.t, this.dt);
             accumulator -= this.dt;
@@ -112,12 +120,12 @@ public class Pendulum : MonoBehaviour
         return currentStatePosition + this.currentVelocity * deltaTime;
     }
 
-    Vector3 PendulumUpdate(Vector3 currentStatePosition, float deltaTime)
+    Vector3 PendulumUpdate(Vector3 currentStatePosition, float deltaTime, bool pull)
     {
         // Add gravity free fall
         this.gravityForce = this.mass * Physics.gravity.magnitude;
         this.gravityDirection = Physics.gravity.normalized;
-        this.currentVelocity += this.gravityDirection * this.gravityForce * deltaTime;
+        this.currentVelocity += this.gravityDirection * this.gravityForce * deltaTime ;
         Vector3 pivot_p = this.Pivot.transform.position;
         Vector3 bob_p = this.currentStatePosition;
         Vector3 auxiliaryMovementDelta = this.currentVelocity * deltaTime;
@@ -136,12 +144,23 @@ public class Pendulum : MonoBehaviour
             this.tensionForce += centripetalForce;
             this.currentVelocity += this.tensionDirection * this.tensionForce * deltaTime;
         }
+        if (pull)
+        {
+            this.currentVelocity += this.tensionDirection * this.pullForce * deltaTime;
+        }
         // Get the movement delta
         Vector3 movementDelta = Vector3.zero;
         movementDelta += this.currentVelocity * deltaTime;
         //return currentStatePosition + movementDelta;
         float distance = Vector3.Distance(pivot_p, currentStatePosition + movementDelta);
-        return this.GetPointOnLine(pivot_p, currentStatePosition + movementDelta, distance <= this.ropeLength ? distance : this.ropeLength);
+        if (!pull)
+        {
+            return this.GetPointOnLine(pivot_p, currentStatePosition + movementDelta, distance <= this.ropeLength ? distance : this.ropeLength);
+        }
+        else
+        {
+            return this.currentStatePosition + movementDelta;
+        }
     }
     Vector3 GetPointOnLine(Vector3 start, Vector3 end, float distanceFromStart)
     {
