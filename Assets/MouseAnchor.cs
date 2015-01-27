@@ -84,27 +84,12 @@ public class MouseAnchor : MonoBehaviour
 
 	void Update ()
     {
-        //if(Input.GetMouseButtonDown(0))
-        //{
-        //    float dist;
-        //    Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
-        //    plane.Raycast(ray, out dist);
-
-        //    Vector3 anchorPos = ray.GetPoint(dist);
-        //    Debug.Log(anchorPos);
-        //    SetAnchor(anchorPos);
-        //    //hj.connectedAnchor = anchorPos;
-        //}
-
         foreach (var v in world.Polygons.SelectMany(x => x.Vertices))
         {
-            if (v == _pendulum.Pivot.transform.position.ToVector2XY())
+            if (_pendulum.Pivot != null && v == _pendulum.Pivot.transform.position.ToVector2XY())
                 continue;
-            //hj.connectedAnchor
-            if (v.FindDistanceToSegment(this.transform.position.ToVector2XY(), _pendulum.Pivot.transform.position.ToVector2XY()) < threshold)
+            if (_pendulum.Pivot != null && v.FindDistanceToSegment(this.transform.position.ToVector2XY(), _pendulum.Pivot.transform.position.ToVector2XY()) < threshold)
             {
-                //Debug.DrawLine(transform.position, hj.connectedAnchor, Color.red, 1f);
-                //Debug.DrawLine(transform.position, v.ToVector3XY(), Color.green, 1f);
                 CreateNewAnchor(v);
                 break;
             }
@@ -114,10 +99,8 @@ public class MouseAnchor : MonoBehaviour
         {
             var prevAnchor = this.anchors[this.anchors.Count - 2];
             RaycastHit hitInfo;
-            //Debug.DrawLine(this.transform.position, prevAnchor.position);
             if (Physics.Raycast(this.transform.position, prevAnchor.position - this.transform.position, out hitInfo))
             {
-                //Debug.Log("Hit: " + hitInfo.collider.name);
                 if (hitInfo.collider == prevAnchor.go.collider)
                 {
                     PopAnchor();
@@ -128,9 +111,10 @@ public class MouseAnchor : MonoBehaviour
         foreach (var l in world.Polygons.SelectMany(x => x.Edges))
         {
             Vector2 c;
-            if (transform.position.ToVector2XY().FindDistanceToSegment(l.Start, l.End, out c) < threshold)
+            var pos = transform.position.ToVector2XY();
+            if (pos.FindDistanceToSegment(l.Start, l.End, out c) < 1 &&
+                MyExtensions.FasterLineSegmentIntersection(pos,pos+_pendulum.currentVelocity.ToVector2XY() * 5, l.Start, l.End))
             {
-
                 var vel = _pendulum.currentVelocity * -0.3f;
                 if (vel.magnitude > 10)
                     vel = vel.normalized * 10;
@@ -138,18 +122,40 @@ public class MouseAnchor : MonoBehaviour
                 {
                     vel = Vector3.zero;
                 }
-                else
-                {
-                    _pendulum.currentVelocity = vel;
-                    this.transform.position = c.ToVector3XY() + vel.normalized;
-                }
+                _pendulum.currentVelocity = vel;
+            }
+        }
+
+	    if (Input.GetMouseButtonDown(1))
+	    {
+            anchors.Clear();
+	        _pendulum.Pivot = null;
+	    } 
+        else if (Input.GetMouseButtonDown(0))
+        {
+            float dist;
+            Vector3 mosPos = Vector3.zero;
+            Ray ray = Camera.mainCamera.ScreenPointToRay(Input.mousePosition);
+            if (plane.Raycast(ray, out dist))
+            {
+                mosPos = ray.GetPoint(dist);
+            }
+
+            RaycastHit hitInfo;
+            if (Physics.Raycast(this.transform.position, mosPos - this.transform.position, out hitInfo))
+            {
+                CreateNewAnchor(hitInfo.point);
+                _pivot.transform.position = hitInfo.point;
+                _pendulum.Pivot = _pivot;
+                _pendulum.ResetRopeLength();
+                
             }
         }
 	}
 
     void OnDrawGizmos()
     {
-        if(Application.isPlaying)
+        if (Application.isPlaying && _pendulum.Pivot != null)
         {
             Gizmos.DrawWireSphere(_pendulum.Pivot.transform.position, .3f);
             for(int i = 0; i < anchors.Count - 1; i++)

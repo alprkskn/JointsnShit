@@ -55,7 +55,9 @@ public class Pendulum : MonoBehaviour
         while (this.accumulator >= this.dt)
         {
             this.previousStatePosition = this.currentStatePosition;
-            this.currentStatePosition = this.PendulumUpdate(this.currentStatePosition, this.dt);
+            this.currentStatePosition = (Pivot != null)
+                ? this.PendulumUpdate(this.currentStatePosition, this.dt)
+                : this.currentStatePosition + (this.dt * currentVelocity) + (this.gravityDirection * this.gravityForce * this.dt);
             //integrate(state, this.t, this.dt);
             accumulator -= this.dt;
             this.t += this.dt;
@@ -138,6 +140,8 @@ public class Pendulum : MonoBehaviour
     }
     void OnDrawGizmos()
     {
+        if (this.Pivot == null)
+            return;
         // purple
         Gizmos.color = new Color(.5f, 0f, .5f);
         Gizmos.DrawWireSphere(this.Pivot.transform.position, this.ropeLength);
