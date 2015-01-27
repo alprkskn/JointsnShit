@@ -57,7 +57,7 @@ public class Pendulum : MonoBehaviour
             this.previousStatePosition = this.currentStatePosition;
             this.currentStatePosition = (Pivot != null)
                 ? this.PendulumUpdate(this.currentStatePosition, this.dt)
-                : this.currentStatePosition + (this.dt * currentVelocity) + (this.gravityDirection * this.gravityForce * this.dt);
+                : this.FreefallUpdate(this.currentStatePosition, this.dt);
             //integrate(state, this.t, this.dt);
             accumulator -= this.dt;
             this.t += this.dt;
@@ -103,6 +103,15 @@ public class Pendulum : MonoBehaviour
         // Set the transition state
         this.currentStatePosition = resetBobPosition;
     }
+    Vector3 FreefallUpdate(Vector3 currentStatePosition, float deltaTime)
+    {
+        this.gravityForce = this.mass * Physics.gravity.magnitude;
+        this.gravityDirection = Physics.gravity.normalized;
+        this.currentVelocity += this.gravityDirection * this.gravityForce * deltaTime;
+
+        return currentStatePosition + this.currentVelocity * deltaTime;
+    }
+
     Vector3 PendulumUpdate(Vector3 currentStatePosition, float deltaTime)
     {
         // Add gravity free fall
